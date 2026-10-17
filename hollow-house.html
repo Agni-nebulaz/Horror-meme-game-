@@ -1,0 +1,167 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Hollow House</title>
+<style>
+:root{--v:#0a0d12;--l:#d8a94a;--b:#a3303f;--m:#5c9086;--bone:#ddd6c6;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--v);color:var(--bone);font-family:system-ui,sans-serif;overflow:hidden;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#menu,#over{position:fixed;inset:0;overflow:auto;padding:18px;background:radial-gradient(ellipse at 50% 0,#1b2630,var(--v) 70%);z-index:5}
+h1{font:italic 700 clamp(38px,11vw,64px) Palatino,Georgia,serif;margin:8px 0 0;color:var(--l)}
+.sub{margin:4px 0 14px;opacity:.8;max-width:36ch;line-height:1.5}
+.rk{border:1px solid #2c3a45;border-radius:6px;padding:10px 12px;margin-bottom:12px}
+.bar{height:6px;background:#1c2630;border-radius:3px;margin-top:6px}.bar i{display:block;height:100%;background:var(--l);border-radius:3px}
+.chs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.ch{border:1px solid #2c3a45;border-radius:6px;padding:9px;background:#0f161d;color:inherit;text-align:left;font:inherit}
+.ch.on{border-color:var(--l);background:#1a1d16}.ch b{display:block;font-family:Palatino,Georgia,serif;font-size:18px}.ch span{font-size:12px;opacity:.7}
+button.go{background:var(--l);color:#17120a;border:0;border-radius:6px;padding:13px 16px;font:700 16px system-ui;margin:0 8px 8px 0}
+button.go.alt{background:transparent;color:var(--bone);border:1px solid #4a5a66}
+.fp{border:1px solid #2c3a45;border-radius:6px;padding:10px;margin:4px 0 10px}
+.fr{display:flex;gap:8px;margin-top:8px}.fr input{background:#0f161d;color:var(--bone);border:1px solid #4a5a66;border-radius:4px;padding:9px;font:inherit;width:120px;text-transform:uppercase}
+.fr button{background:var(--m);border:0;color:#06100e;border-radius:4px;padding:9px 14px;font-weight:700}
+.note{font-size:12px;opacity:.55;margin-top:10px;max-width:42ch}
+#hud{position:fixed;top:env(safe-area-inset-top,0px);left:0;right:0;padding:10px 14px;display:flex;justify-content:space-between;pointer-events:none;font-size:14px;line-height:1.5;z-index:2}
+#toast{position:fixed;bottom:calc(30px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;font:italic 17px Palatino,Georgia,serif;opacity:0;transition:opacity .4s;z-index:2;pointer-events:none}
+.hide{display:none!important}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="hud" class="hide"><div id="obj"></div><div id="sq" style="text-align:right"></div></div>
+<div id="toast"></div>
+<div id="menu">
+<h1>Hollow House</h1>
+<p class="sub">Restore 6 fuses, find 3 keys, survive the Warden and the Hollow King, and reach the gate when it unlocks. Stand still in a locker to hide.</p>
+<div class="rk" id="rk"></div>
+<div class="chs" id="chs"></div>
+<button class="go" id="qm">Quick match</button><button class="go alt" id="fr">Friends room</button><button class="go alt" id="so">Solo with bots</button>
+<div class="fp hide" id="fp"></div>
+<p class="note">Online modes need the game server. Without one, they fall back to a bot demo.</p>
+</div>
+<div id="over" class="hide"></div>
+<script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+<script>
+const SERVER='';// for the APK, set your server URL, e.g. 'https://hollow-house.onrender.com'
+const $=i=>document.getElementById(i),cv=$('c'),g=cv.getContext('2d'),dk=document.createElement('canvas'),dg=dk.getContext('2d');
+let st={xp:0,ch:0};try{Object.assign(st,JSON.parse(localStorage.getItem('hh')||'{}'))}catch(e){}
+const save=()=>{try{localStorage.setItem('hh',JSON.stringify(st))}catch(e){}};
+const CH=[{n:'Mara',e:'👧',spd:1.12,rev:1,hp:1,sth:1,p:'Fastest runner'},{n:'Doc',e:'🧑‍⚕️',spd:1,rev:2,hp:1,sth:1,p:'Revives twice as fast'},{n:'Finn',e:'🥷',spd:1,rev:1,hp:1,sth:.5,p:'Monsters notice him from half as far'},{n:'Rook',e:'💂',spd:.97,rev:1,hp:2,sth:1,p:'Survives one extra hit'}];
+const RK=[['Bronze',0],['Silver',100],['Gold',250],['Platinum',450],['Phantom',700]];
+const NAMES=['Kiran','Zara','Dev','Mila','Ravi','Noor','Ash','Tess','Jun','Omar','Leah','Sid'];
+function rank(){let i=0;RK.forEach((r,k)=>{if(st.xp>=r[1])i=k});const n=RK[i+1];return{n:RK[i][0],p:n?(st.xp-RK[i][1])/(n[1]-RK[i][1]):1,left:n?n[1]-st.xp:0,nx:n?n[0]:''}}
+function menu(){const r=rank();$('rk').innerHTML=`<b style="font-family:Palatino,Georgia,serif;font-size:20px;color:var(--l)">${r.n}</b> <span style="opacity:.7">${st.xp} XP${r.nx?` · ${r.left} to ${r.nx}`:''}</span><div class="bar"><i style="width:${r.p*100}%"></i></div>`;
+$('chs').innerHTML=CH.map((c,i)=>`<button class="ch ${i==st.ch?'on':''}" data-i="${i}"><b>${c.e} ${c.n}</b><span>${c.p}</span></button>`).join('');
+document.querySelectorAll('.ch').forEach(b=>b.onclick=()=>{st.ch=+b.dataset.i;save();menu()})}
+$('qm').onclick=()=>online('',1);$('so').onclick=()=>match();
+$('fr').onclick=()=>{const f=$('fp');f.classList.toggle('hide');f.innerHTML='<div>Room code. Share it with friends.</div><div class="fr"><input id="rc" maxlength="6" value="'+Math.random().toString(36).slice(2,6).toUpperCase()+'"><button id="jn">Join</button></div>';$('jn').onclick=()=>online($('rc').value,0)};
+const T=40,GW=90,GH=64;let S=null,M,B,R,sock=null,net={host:1,inp:{}},keys={},joy=null,toastT=0,last=0,fb=0;
+const rng=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+function back(){if(sock){try{sock.close()}catch(e){}sock=null}S=null;$('over').classList.add('hide');$('hud').classList.add('hide');$('menu').classList.remove('hide');menu()}
+function fallback(){if(fb)return;fb=1;sock=null;$('over').innerHTML='<h1>Server unreachable</h1><p class="sub">Starting a demo with bot teammates.</p>';setTimeout(()=>{fb=0;match()},1500)}
+function match(){const o=$('over');$('menu').classList.add('hide');o.classList.remove('hide');o.innerHTML='<h1>Finding survivors</h1><p class="sub" id="mm">Searching the lobby…</p>';
+const pool=NAMES.slice().sort(()=>Math.random()-.5).slice(0,3),oth=CH.map((_,i)=>i).filter(i=>i!=st.ch);
+pool.forEach((n,i)=>setTimeout(()=>{$('mm').innerHTML+=`<br>${n} joined`},500+i*500));
+setTimeout(()=>{o.classList.add('hide');begin({seed:Math.random()*1e9|0,host:'me',players:[{id:'me',name:'You',ch:st.ch},...pool.map((n,i)=>({id:'b'+i,name:n,ch:oth[i],bot:1}))]})},2200)}
+function online(room,quick){const o=$('over');$('menu').classList.add('hide');o.classList.remove('hide');o.innerHTML='<h1>Connecting</h1><p class="sub">Reaching server…</p>';
+if(typeof io==='undefined')return fallback();
+try{sock=io(SERVER||undefined,{reconnection:false})}catch(e){return fallback()}
+const to=setTimeout(()=>{try{sock.close()}catch(e){}fallback()},4500);
+sock.on('connect',()=>{clearTimeout(to);sock.emit('join',{room,quick,ch:st.ch,name:NAMES[Math.random()*NAMES.length|0]+(Math.random()*90+10|0)})});
+sock.on('connect_error',()=>{clearTimeout(to);fallback()});
+sock.on('full',()=>{o.innerHTML='<h1>Room is full</h1><button class="go" id="mn2">Menu</button>';$('mn2').onclick=back});
+sock.on('lobby',l=>{const h=l.host==sock.id;o.innerHTML=`<h1>${l.quick?'Matchmaking':'Room '+room.toUpperCase()}</h1><p class="sub">${l.players.map(p=>CH[p.ch].e+' '+p.name+(p.id==l.host?' (host)':'')).join('<br>')}<br><br>Empty spots fill with bots.</p>`+(h&&!l.quick?'<button class="go" id="gs">Start game</button>':'<p class="note">'+(l.quick?'Starting in a few seconds…':'Waiting for the host…')+'</p>');if($('gs'))$('gs').onclick=()=>sock.emit('go')});
+sock.on('start',d=>{o.classList.add('hide');begin(d)});
+sock.on('in',d=>net.inp[d.id]=d);sock.on('snap',snap);
+sock.on('left',id=>{const x=S&&S.sv.find(s=>s.id==id);if(x)x.h=0});
+sock.on('lost',()=>{if(S&&!S.end)finish(0,'The host left the game.')})}
+function gen(){const m=[];for(let y=0;y<GH;y++){m.push(new Uint8Array(GW));for(let x=0;x<GW;x++)if(!x||!y||x==GW-1||y==GH-1)m[y][x]=1}
+for(let i=0;i<130;i++){const w=1+R()*4|0,h=1+R()*4|0,x=3+R()*(GW-8)|0,y=3+R()*(GH-8)|0;if((x<9&&y<9)||(x>GW-12&&y>GH-12))continue;for(let a=0;a<h;a++)for(let b=0;b<w;b++)if(y+a<GH-1&&x+b<GW-1)m[y+a][x+b]=1}return m}
+const solid=(x,y)=>{const tx=x/T|0,ty=y/T|0;return tx<0||ty<0||tx>=GW||ty>=GH||S.m[ty][tx]};
+const blocked=(x,y,r)=>solid(x-r,y-r)||solid(x+r,y-r)||solid(x-r,y+r)||solid(x+r,y+r);
+const mv=(e,dx,dy)=>{if(!blocked(e.x+dx,e.y,e.r))e.x+=dx;if(!blocked(e.x,e.y+dy,e.r))e.y+=dy};
+const D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),up=s=>!s.down&&!s.dead&&!s.esc;
+function open(minD,rn){rn=rn||Math.random;for(let i=0;i<400;i++){const p={x:(2+rn()*(GW-4))*T,y:(2+rn()*(GH-4))*T};if(S.rc[p.y/T|0][p.x/T|0]&&!blocked(p.x,p.y,18)&&D(p,{x:130,y:130})>minD)return p}return{x:600,y:600}}
+function resize(){cv.width=dk.width=innerWidth;cv.height=dk.height=innerHeight}addEventListener('resize',resize);resize();
+function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>e.style.opacity=0,2600)}
+function say(t){S.mid++;S.msg=[S.mid,t];toast(t)}
+function begin(d){const my=sock?sock.id:'me';net={host:d.host==my,inp:{}};R=rng(d.seed);const m=gen();
+S={m,t:0,sv:[],fu:[],it:[],end:0,mid:0,gate:0,sa:0,ni:0,ex:{x:(GW-5)*T,y:(GH-5)*T}};
+const rc=[];for(let y=0;y<GH;y++)rc.push(new Uint8Array(GW));const q=[[3,3]];rc[3][3]=1;while(q.length){const[x,y]=q.pop();[[1,0],[-1,0],[0,1],[0,-1]].forEach(([a,b])=>{const X=x+a,Y=y+b;if(!m[Y]||m[Y][X]!==0||rc[Y][X])return;rc[Y][X]=1;q.push([X,Y])})}S.rc=rc;
+const pl=d.players.slice(),spare=CH.map((_,i)=>i).filter(i=>!pl.some(p=>p.ch==i));for(let i=pl.length;i<4;i++)pl.push({id:'f'+i,name:NAMES[Math.random()*NAMES.length|0],ch:spare.shift()||0,bot:1});
+pl.forEach((p,i)=>{const c=CH[p.ch];S.sv.push({id:p.id,n:p.name,e:c.e,x:110+i*28,y:120+(i%2)*26,r:11,hp:c.hp,spd:c.spd,rv:c.rev,sth:c.sth,h:p.bot?0:1,down:0,dead:0,esc:0,inv:0,fa:0,rp:0,pf:i,wd:0,wa:0,st:0,lamp:0})});
+S.me=S.sv.find(o=>o.id==my)||S.sv[0];
+for(let i=0;i<6;i++)S.fu.push({...open(900,R),p:0,done:0});
+const it=(t,n,md)=>{for(let i=0;i<n;i++)S.it.push({...open(md,R),t,got:0})};it('k',3,1200);it('b',6,500);it('m',4,500);it('h',10,300);
+const w=open(1200,R);M={x:w.x,y:w.y,r:15,stun:0,tx:w.x,ty:w.y,pt:0,fa:0,sp:[88,124],rg:300,st:1.4,dm:1};
+B={x:0,y:0,r:22,stun:0,tx:0,ty:0,pt:0,fa:0,sp:[100,134],rg:460,st:.9,dm:9,on:0};
+S.cam={x:S.me.x,y:S.me.y};$('hud').classList.remove('hide');toast('Find fuses and keys. Stand still in a 🗄️ to hide.');last=performance.now()}
+function inp(){let x=0,y=0;if(keys.ArrowLeft||keys.a)x--;if(keys.ArrowRight||keys.d)x++;if(keys.ArrowUp||keys.w)y--;if(keys.ArrowDown||keys.s)y++;if(joy){x=joy.x;y=joy.y}const l=Math.hypot(x,y);return l>.1?{x:x/Math.max(1,l),y:y/Math.max(1,l)}:{x:0,y:0}}
+addEventListener('keydown',e=>keys[e.key.length>1?e.key:e.key.toLowerCase()]=1);addEventListener('keyup',e=>keys[e.key.length>1?e.key:e.key.toLowerCase()]=0);
+cv.addEventListener('touchstart',e=>{const t=e.touches[0];joy={ox:t.clientX,oy:t.clientY,x:0,y:0};e.preventDefault()},{passive:false});
+cv.addEventListener('touchmove',e=>{if(!joy)return;const t=e.touches[0];joy.x=Math.max(-1,Math.min(1,(t.clientX-joy.ox)/50));joy.y=Math.max(-1,Math.min(1,(t.clientY-joy.oy)/50));e.preventDefault()},{passive:false});
+cv.addEventListener('touchend',()=>joy=null);
+function nav(b,tx,ty,dt){b.nt=(b.nt||0)-dt;if(b.nt<=0||!b.wp||Math.hypot(b.wp.x-b.x,b.wp.y-b.y)<10){b.nt=.4;const gx=Math.max(0,Math.min(GW-1,tx/T|0)),gy=Math.max(0,Math.min(GH-1,ty/T|0)),s0=(b.y/T|0)*GW+(b.x/T|0),tg=gy*GW+gx,pv=new Int16Array(GW*GH).fill(-1),q=[s0];pv[s0]=s0;
+for(let h=0;h<q.length&&pv[tg]<0;h++){const c=q[h],x=c%GW,y=c/GW|0;for(const[a,d]of[[1,0],[-1,0],[0,1],[0,-1]]){const X=x+a,Y=y+d;if(X<0||Y<0||X>=GW||Y>=GH||S.m[Y][X]||pv[Y*GW+X]>=0)continue;pv[Y*GW+X]=c;q.push(Y*GW+X)}}
+if(pv[tg]<0){b.wp=null;return Math.atan2(ty-b.y,tx-b.x)}let c=tg;while(pv[c]!=s0)c=pv[c];b.wp={x:(c%GW+.5)*T,y:((c/GW|0)+.5)*T}}
+return Math.atan2(b.wp.y-b.y,b.wp.x-b.x)}
+function bot(b,dt){let tx,ty,sp=118;const mm=B.on&&D(b,B)<D(b,M)?B:M;
+if(D(b,mm)<210){tx=b.x+(b.x-mm.x);ty=b.y+(b.y-mm.y);sp=126}
+else{const d=S.sv.find(o=>o!==b&&o.down&&!o.dead&&D(b,o)<520);if(d){tx=d.x;ty=d.y}
+else{let f=null;for(let k=0;k<6;k++){const c=S.fu[(b.pf+k)%6];if(!c.done){f=c;break}}
+if(f){tx=f.x;ty=f.y}else{const k=S.it.filter(i=>i.t=='k'&&!i.got).sort((a,c)=>D(a,b)-D(c,b))[0];if(k){tx=k.x;ty=k.y}else{tx=S.ex.x;ty=S.ex.y}}}}
+let a=b.wd>0?(b.wd-=dt,b.wa):nav(b,tx,ty,dt);
+if(Math.hypot(tx-b.x,ty-b.y)<22&&b.wd<=0)return;
+const ox=b.x,oy=b.y;mv(b,Math.cos(a)*sp*dt,Math.sin(a)*sp*dt);b.fa=a;
+b.st+=Math.hypot(b.x-ox,b.y-oy)<sp*dt*.3?dt:-b.st;if(b.st>.4){b.wd=.8;b.wa=Math.random()*6.28;b.st=0}}
+function mon(m,dt){m.stun=Math.max(0,m.stun-dt);let tg=null,bd=1e9;S.sv.forEach(o=>{if(!up(o)||(o.hid&&D(o,m)>70))return;const d=D(o,m);if(d<m.rg*o.sth&&d<bd){bd=d;tg=o}});
+if(m.stun<=0){let tx,ty,sp;if(tg){tx=tg.x;ty=tg.y;sp=m.sp[1]}else{m.pt-=dt;if(m.pt<=0||Math.hypot(m.tx-m.x,m.ty-m.y)<30){const q=Math.random()<.5?open(0):S.sv.filter(up)[0]||open(0);m.tx=q.x+(Math.random()-.5)*200;m.ty=q.y+(Math.random()-.5)*200;m.pt=4}tx=m.tx;ty=m.ty;sp=m.sp[0]}
+const a=Math.atan2(ty-m.y,tx-m.x);m.fa=a;mv(m,Math.cos(a)*sp*dt,Math.sin(a)*sp*dt)}
+S.sv.forEach(o=>{if(up(o)&&!o.inv&&m.stun<=0&&D(o,m)<o.r+m.r+3){o.hp-=m.dm;o.inv=2.5;m.stun=m.st;if(o.hp<=0){o.hp=0;o.down=20;o.rp=0;say(o.n+' is down')}else say(o.n+' was hit')}})}
+function upd(dt){const s=S;s.t+=dt;
+s.sv.forEach(o=>{o.inv=Math.max(0,o.inv-dt);o.lamp=Math.max(0,o.lamp-dt);
+if(up(o)){if(o.h){const v=o===s.me?inp():(net.inp[o.id]||{x:0,y:0}),sp=130*o.spd;o.mv=v.x||v.y?1:0;if(v.x||v.y){mv(o,v.x*sp*dt,v.y*sp*dt);let d=Math.atan2(v.y,v.x)-o.fa;d=Math.atan2(Math.sin(d),Math.cos(d));o.fa+=d*Math.min(1,dt*12)}}else bot(o,dt)}
+if(o.down){o.down-=dt;if(o.down<=0){o.dead=1;o.down=0;say(o.n+' was lost')}}});
+s.sv.forEach(o=>{o.hid=up(o)&&!o.mv&&s.it.some(i=>i.t=='h'&&D(o,i)<26)?1:0});
+if(!B.on&&(s.fu.every(f=>f.done)||s.t>=270)){const p=open(1000);B.x=B.tx=p.x;B.y=B.ty=p.y;B.on=1;say('The Hollow King awakens')}
+mon(M,dt);if(B.on)mon(B,dt);
+s.sv.forEach(d=>{if(!d.down)return;const w=s.sv.find(o=>up(o)&&D(o,d)<38);if(w){d.rp+=dt*w.rv;if(d.rp>=3){d.down=0;d.hp=1;d.rp=0;d.inv=3;say(w.n+' revived '+d.n)}}else d.rp=Math.max(0,d.rp-dt*.5)});
+s.fu.forEach(f=>{if(f.done)return;const w=s.sv.filter(o=>up(o)&&D(o,f)<36);if(w.length){f.p+=dt*w.length/4;if(f.p>=1){f.done=1;say('Fuse restored ('+s.fu.filter(x=>x.done).length+'/6)')}}else f.p=Math.max(0,f.p-dt*.2)});
+s.it.forEach(i=>{if(i.got||i.t=='h')return;const w=s.sv.find(o=>up(o)&&D(o,i)<24);if(!w)return;
+if(i.t=='k'){i.got=1;say(w.n+' found a key ('+s.it.filter(x=>x.t=='k'&&x.got).length+'/3)')}else if(i.t=='b'){i.got=1;w.lamp=25;say(w.n+' has a brighter lantern')}else if(w.hp<3){i.got=1;w.hp++;say(w.n+' patched up')}});
+if(!s.gate&&s.fu.every(f=>f.done)&&s.it.filter(i=>i.t=='k').every(i=>i.got)&&s.t>=360){s.gate=1;say('The gate is open. Run.')}
+if(s.gate)s.sv.forEach(o=>{if(up(o)&&D(o,s.ex)<46){o.esc=1;say(o.n+' escaped')}});
+s.cam.x+=(s.me.x-s.cam.x)*Math.min(1,dt*6);s.cam.y+=(s.me.y-s.cam.y)*Math.min(1,dt*6)}
+function send(){sock.emit('snap',{t:S.t,g:S.gate,sv:S.sv.map(o=>[o.x|0,o.y|0,+o.fa.toFixed(2),o.hp,+o.down.toFixed(1),o.dead,o.esc,+o.rp.toFixed(1),+o.inv.toFixed(1),+o.lamp.toFixed(0),o.hid|0]),fu:S.fu.map(f=>[+f.p.toFixed(2),f.done]),it:S.it.map(i=>i.got),M:[M.x|0,M.y|0,+M.fa.toFixed(2)],B:[B.x|0,B.y|0,+B.fa.toFixed(2),B.on],m:S.msg})}
+function snap(s){if(!S||net.host||S.end)return;S.t=s.t;S.gate=s.g;s.sv.forEach((a,i)=>{const o=S.sv[i];if(o)[o.tx,o.ty,o.fa,o.hp,o.down,o.dead,o.esc,o.rp,o.inv,o.lamp,o.hid]=a});
+s.fu.forEach((a,i)=>{S.fu[i].p=a[0];S.fu[i].done=a[1]});s.it.forEach((a,i)=>S.it[i].got=a);
+M.tx=s.M[0];M.ty=s.M[1];M.fa=s.M[2];if(s.B[3]&&!B.on){B.x=s.B[0];B.y=s.B[1]}B.tx=s.B[0];B.ty=s.B[1];B.fa=s.B[2];B.on=s.B[3];
+if(s.m&&s.m[0]!=S.mid){S.mid=s.m[0];toast(s.m[1])}}
+const lp=(o,k)=>{if(o.tx!=null){o.x+=(o.tx-o.x)*k;o.y+=(o.ty-o.y)*k}};
+function chk(){if(S.end)return;const me=S.me;if(net.host){if(!S.sv.some(o=>o.h&&(up(o)||o.down)))finish(me.esc?1:0)}else if(me.esc||me.dead)finish(me.esc?1:0)}
+function finish(win,msg){if(S.end)return;S.end=1;const f=S.fu.filter(x=>x.done).length,k=S.it.filter(i=>i.t=='k'&&i.got).length,xp=win?80+f*8+k*10:15+f*8+k*5,b=rank().n;st.xp+=xp;save();const a=rank().n;
+setTimeout(()=>{$('hud').classList.add('hide');const o=$('over');o.classList.remove('hide');o.innerHTML=`<h1>${win?'You made it out':'The house keeps you'}</h1><p class="sub">${msg||''} ${f}/6 fuses, ${k}/3 keys. <b style="color:var(--l)">+${xp} XP</b>${a!=b?`<br>Rank up: ${a}`:''}</p>`+(sock?'':'<button class="go" id="ag">Play again</button>')+'<button class="go alt" id="mn">Menu</button>';
+if($('ag'))$('ag').onclick=()=>{o.classList.add('hide');match()};$('mn').onclick=back},1200)}
+const em=(t,x,y,s,a)=>{g.globalAlpha=a==null?1:a;g.font=s+'px serif';g.textAlign='center';g.textBaseline='middle';g.fillText(t,x,y);g.globalAlpha=1};
+function draw(){const w=cv.width,h=cv.height;g.fillStyle='#07090c';g.fillRect(0,0,w,h);if(!S)return;const cx=S.cam.x-w/2,cy=S.cam.y-h/2;g.save();g.translate(-cx,-cy);
+const x0=Math.max(0,cx/T|0),x1=Math.min(GW-1,(cx+w)/T|0),y0=Math.max(0,cy/T|0),y1=Math.min(GH-1,(cy+h)/T|0);
+for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){g.fillStyle=S.m[y][x]?'#26313b':((x+y)&1?'#131a21':'#10161c');g.fillRect(x*T,y*T,T,T);if(S.m[y][x]){g.fillStyle='#1a232b';g.fillRect(x*T+3,y*T+3,T-6,T-6)}}
+g.fillStyle=S.gate?'#5c9086':'#a3303f';g.fillRect(S.ex.x-26,S.ex.y-26,52,52);em(S.gate?'🚪':'🔒',S.ex.x,S.ex.y,30);
+S.fu.forEach(f=>{em(f.done?'💡':'🔌',f.x,f.y,24);if(!f.done&&f.p>0){g.strokeStyle='#d8a94a';g.lineWidth=3;g.beginPath();g.arc(f.x,f.y,19,-1.57,-1.57+f.p*6.28);g.stroke()}});
+S.it.forEach(i=>{if(!i.got)em({k:'🔑',b:'🔋',m:'💊',h:'🗄️'}[i.t],i.x,i.y,22)});
+S.sv.forEach(o=>{if(o.esc)return;em(o.dead?'🪦':o.down?'🤕':o.e,o.x,o.y,26,o.dead?.4:o.hid?.3:(o.inv&&(S.t*10|0)%2?.5:1));
+if(o.down){g.strokeStyle='#a3303f';g.lineWidth=3;g.beginPath();g.arc(o.x,o.y,19,-1.57,-1.57+(o.rp/3)*6.28);g.stroke()}
+g.fillStyle='#ddd6c6';g.font='11px system-ui';g.fillText(o.n,o.x,o.y-22)});
+em('👹',M.x,M.y,36);if(B.on)em('💀',B.x,B.y,58);g.restore();
+dg.globalCompositeOperation='source-over';dg.clearRect(0,0,w,h);dg.fillStyle='rgba(2,3,5,.97)';dg.fillRect(0,0,w,h);dg.globalCompositeOperation='destination-out';
+const lt=(x,y,r,a0,a1)=>{const gr=dg.createRadialGradient(x-cx,y-cy,0,x-cx,y-cy,r);gr.addColorStop(0,'rgba(0,0,0,1)');gr.addColorStop(.7,'rgba(0,0,0,.6)');gr.addColorStop(1,'rgba(0,0,0,0)');dg.fillStyle=gr;dg.beginPath();if(a0!==undefined){dg.moveTo(x-cx,y-cy);dg.arc(x-cx,y-cy,r,a0,a1)}else dg.arc(x-cx,y-cy,r,0,6.28);dg.fill()};
+S.sv.forEach(o=>{if(!up(o)&&!o.down)return;if(o.h){const l=o.lamp>0;lt(o.x,o.y,l?160:110);lt(o.x,o.y,l?500:340,o.fa-.5,o.fa+.5)}else lt(o.x,o.y,75)});S.fu.forEach(f=>lt(f.x,f.y,50));lt(S.ex.x,S.ex.y,70);
+g.drawImage(dk,0,0);
+const nm=B.on&&D(S.me,B)<D(S.me,M)?B:M,dm=D(S.me,nm);
+if(dm<520&&!S.me.dead){const ex=Math.max(0,1-dm/520),p=.5+.5*Math.sin(S.t*(4+ex*8)),gr=g.createRadialGradient(w/2,h/2,Math.min(w,h)*.35,w/2,h/2,Math.max(w,h)*.7);gr.addColorStop(0,'rgba(120,10,20,0)');gr.addColorStop(1,`rgba(120,10,20,${ex*.6*p})`);g.fillStyle=gr;g.fillRect(0,0,w,h)}
+[M,B].forEach(m=>{if(m===B&&!B.on)return;if(D(S.me,m)<(m===B?480:340)){g.fillStyle='#c0303f';const s=m===B?9:5;[-s,s].forEach(d=>{g.beginPath();g.arc(m.x-cx+d,m.y-cy-3,m===B?3:2.2,0,6.28);g.fill()})}});
+if(joy){g.strokeStyle='rgba(221,214,198,.35)';g.lineWidth=2;g.beginPath();g.arc(joy.ox,joy.oy,50,0,6.28);g.stroke();g.fillStyle='rgba(221,214,198,.3)';g.beginPath();g.arc(joy.ox+joy.x*50,joy.oy+joy.y*50,20,0,6.28);g.fill()}
+const f=S.fu.filter(x=>x.done).length,k=S.it.filter(i=>i.t=='k'&&i.got).length,tl=Math.max(0,360-S.t|0);
+$('obj').innerHTML=`⚡ ${f}/6 · 🔑 ${k}/3 · `+(S.gate?'🚪 Open':f==6&&k==3?`🚪 opens in ${tl/60|0}:${String(tl%60).padStart(2,'0')}`:'🔒 Gate locked')+(B.on?'<br>💀 awake':'');
+$('sq').innerHTML=S.sv.map(o=>`<span style="opacity:${o.dead?.4:1}">${o.e} ${o.n} ${o.esc?'out':o.dead?'lost':o.down?'down':'❤️'.repeat(o.hp)}</span>`).join('<br>')}
+function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;
+if(S){if(net.host){if(!S.end){upd(dt);S.sa+=dt;if(S.sa>.05&&sock){S.sa=0;send()}chk()}}
+else{const k=Math.min(1,dt*14);S.sv.forEach(o=>lp(o,k));lp(M,k);lp(B,k);S.cam.x+=(S.me.x-S.cam.x)*Math.min(1,dt*6);S.cam.y+=(S.me.y-S.cam.y)*Math.min(1,dt*6);
+if(sock&&!S.end&&(S.ni+=dt)>.05){S.ni=0;const v=inp();sock.emit('in',{x:v.x,y:v.y})}chk()}}
+draw();requestAnimationFrame(loop)}
+menu();requestAnimationFrame(loop);
+</script></body></html>
